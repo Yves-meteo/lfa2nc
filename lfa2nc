@@ -1,0 +1,173 @@
+#!/usr/bin/env python3
+
+version = '1.00'
+Version_story = 'lfa2nc version ' + version + ' (Yves Bouteloup, Météo-France) \n'
+Version_story = Version_story +' First version : 0.1_beta (November 2014)\n' 
+Version_story = Version_story +' 0.2_beta (10-12-2014) : Add ustress, vstress and mfsfc \n' 
+Version_story = Version_story +' 0.3_beta (17-12-2014) : Correction of last time slot problem,\n' 
+Version_story = Version_story +'                         change name of timm1 to time_f\n'
+Version_story = Version_story +'                         and shift flux time output to the middle of temporal window\n'
+Version_story = Version_story +' 0.4_beta (09-01-2015) : Longitude > 180 \n'
+Version_story = Version_story +'                         New point names (Eureka, Niamey, Brienza, Lannemezan, Nimes, Bordeaux)\n' 
+Version_story = Version_story +' 0.5_beta (04-03-2015) : Duplication of cloud_fraction to cc, q to qv add uadv, vadv, tadv and qadv (set to 0)\n'
+Version_story = Version_story +' 0.6_beta (10-03-2015) : A and B as numpy arrays (simple precision) in global attribute instead of string or variables\n'
+Version_story = Version_story +' 0.7_beta (12-03-2015) : Add ug, vg (set to -999) ladv, iadv (set to 0) and lsm\n'
+Version_story = Version_story +' 0.8_beta (17-03-2015) : Add h_soil (1cm), q_soil (set to -999), t_soil (radiative temperature) and snow\n'
+Version_story = Version_story +' 0.9_beta (21-04-2015) : tadv, qadv, uadv and vadv are initialise (not set to 0) when they are in the lfa files\n'
+Version_story = Version_story +' 0.10_beta (30-07-2015) : Modification of use of tadv, qadv, uadv and vadv \n'
+Version_story = Version_story +' 0.11_beta (06-09-2016) : Simple AROME use \n'
+Version_story = Version_story +' 0.12 (14-02-2017) : Extract a point by its rank instead of its name \n'
+Version_story = Version_story +' 0.13 (16-02-2017) : Average over a list of point define by rank1 and rank2 \n'
+Version_story = Version_story +' 0.14 (17-03-2017) : Add 3 new points : Bosung Tower, Dumont d’Urville and Halley \n'
+Version_story = Version_story +' 0.15 (22-03-2017) : Add surface fields for AROME \n'
+Version_story = Version_story +' 0.16/0.17/0.18 (20-03-2019) : Modifications from Azouz Niramson (among others hu2m) \n'
+Version_story = Version_story +' 0.19 (03-04-2019) : For Arpege, precipitation at surface are taken from 1D fluxes and not from G* fields which are set to 0 on sea \n'
+Version_story = Version_story +' 0.20 (20-08-2019) :  Eric Bazile : read tsurf from SVTS in AROME case instead of a computation from LWup \n'
+Version_story = Version_story +' 1.00 (10-01-2020) :  Yves Bouteloup  => Beta version en python 3.7 \n'
+Version_story = Version_story +' 1.22 (02-03-2022) :  Eric Bazile : phasage de la version lfa2nc_22 avec read tsurf from SVGFS10 for Arpege and shf, lhf from SFCFS03--05 \n'
+Version_story = Version_story +' 2.00 (18-01-2024) :  Yves Bouteloup : Mise sous git'
+
+import sys
+import argparse
+from lfanetcdf_class_P3_22 import NetCdf
+
+def main(argv):     
+
+# Création d'une liste de fichier DDHLFA à partir des arguments 
+
+   parser = argparse.ArgumentParser(description='Convert ddh lfa files to NetCdf')
+   parser.add_argument('sourcefiles', nargs='*')
+   parser.add_argument('-n','--name', help='Name of the point to be extracted')
+   parser.add_argument('-r1','--rank1', help='Rank of the first point to be extracted',default=0)
+   parser.add_argument('-r2','--rank2', help='Rank of the last point to be extracted',default=0)
+   parser.add_argument('-a','--average', help='Average of the point extracted',action='store_true')
+   parser.add_argument('-m','--model', help='Name of the model which produced data', default='Arpege-oper')
+   parser.add_argument('-l','--list', help='Just list file, do nothing',action='store_true')
+   parser.add_argument('-v','--version', help='Print lfa2nc version',action='store_true')
+   parser.add_argument('-vb','--verbose', help='Active verbose mode for debuging',action="store_true")
+   args = parser.parse_args()
+
+   i=0
+   ddh_list = args.sourcefiles
+   list_len = len(ddh_list)
+   point_selector = args.name
+   point_rank1    = int(args.rank1)
+   point_rank2    = int(args.rank2)
+   model_name     = args.model
+   
+   debug = False
+   if args.verbose:
+      print('Verbose mode activated')
+      debug = True
+
+   if point_rank1 > 0 and point_rank2 == 0 : point_rank2 = point_rank1
+
+   if args.version:
+     print('  ')
+     print(Version_story)
+     print('  ')
+     exit()
+
+   if args.name == None and args.rank1 == 0 and args.list == False:
+      print('  ')
+      print('At least one of arguments -l, -n, -v, -r1 or -h is required')
+      print(' ')
+      parser.print_help()
+      exit()
+
+   point_list=0
+   if args.list:
+      if list_len < 1 :
+        print('  ')
+        print('With option -l at least one ddh file is required')
+        print('  ')
+        parser.print_help()
+        exit()   
+      point_selector = 'pouet'
+      point_list = 1
+   else:
+      if list_len < 2 :
+        print('  ')
+        print('With option -n (or -r1) at least two ddh files are required')
+        print('  ')
+        parser.print_help()
+        exit()   
+
+# On ne peut faire la moyenen que dans le cas 'Arome'
+#   if model_name != 'Arome' and args.average :
+#      print '  '
+#      print 'Average is allowed only for Arome model not for ',model_name        
+#      print '  '
+#      exit()
+      
+# On ne fait que la liste du contenu des fichiers     
+   if point_list:
+      netcdf_list = NetCdf()     
+      netcdf_list.init(ddh_list,point_rank1,point_selector,model_name,point_list,debug,version)   
+
+   else :  
+# Extraction par nom 
+      if point_rank1 == 0 :   
+        netcdf_file = NetCdf()
+        netcdf_file.init(ddh_list,point_rank1,point_selector,model_name,point_list,debug,version)
+        if netcdf_file.extract: 
+          print(point_selector + ' is point number ',netcdf_file.point,\
+          ' distance to requested point is','{:.2f}'.format(netcdf_file.dist),' km') 
+          netcdf_file.read_lfa_file(ddh_list)
+          netcdf_file.write_file()
+        else:
+          print(point_selector + ' not found')  
+      else :  
+      
+# Extraction par rang : Créer une liste d'objet de type NetCdf      
+        point_rank = point_rank1
+        netcdf_file = []
+        while point_rank <= point_rank2 :
+           netcdf_file.append(NetCdf())
+           point_rank += 1
+
+# Initialiser cet ensemble d'objets     
+        point_rank = point_rank1
+        while point_rank <= point_rank2 :
+           ind = point_rank-point_rank1
+           if args.name == None:
+              point_selector = 'point_{:02d}'.format(point_rank)   
+           netcdf_file[ind].init(ddh_list,point_rank,point_selector,model_name,point_list,debug,version)
+           if netcdf_file[ind].extract: 
+             print(point_selector + ' is point number ',netcdf_file[ind].point,\
+             ' distance to requested point is','{:.2f}'.format(netcdf_file[ind].dist),' km')
+             netcdf_file[ind].read_lfa_file(ddh_list)
+           else:
+             print(point_selector + ' not found')
+            
+           point_rank += 1  
+#  Dans le cas ou on ne fait pas la moyenne on ecrit les n netcdf          
+           if not args.average : netcdf_file[ind].write_file()  
+
+# Faire la moyenne de cet ensemble  
+        if  args.average :
+          print('Average over extracted points')
+          netcdf_sum = netcdf_file[0]
+          point_rank = point_rank1 + 1
+          while point_rank <= point_rank2 :
+            ind = point_rank-point_rank1
+            netcdf_sum = netcdf_sum + netcdf_file[ind]
+            point_rank += 1
+          
+          scalar = float(point_rank2 - point_rank1 + 1)  
+          netcdf_sum /= scalar
+          netcdf_sum.convert()
+          if args.name != None:
+             netcdf_sum.point_name = args.name +  '_{:02d}-{:02d}'.format(point_rank1,point_rank2)
+          else:
+             netcdf_sum.point_name = 'average_{:02d}-{:02d}'.format(point_rank1,point_rank2)  
+          netcdf_sum.filename()
+          netcdf_sum.write_file() 
+           
+
+   
+     
+#-----------------------------------------------------------------------------------#             
+if __name__ == "__main__":
+    main(sys.argv[1:])
+#-----------------------------------------------------------------------------------#        
