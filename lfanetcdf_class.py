@@ -16,19 +16,28 @@ class NetCdf:
 
 
 #-----------------------------------------------------------------------------------#        
-   def __init__(self):
+   def __init__(self,full=False):
 
      
 # some usefull constants ...   
      self.Rg      = 9.80665
+     self.Rtt     = 273.16
      self.Cpd     = 1004.7
      self.Cpv     = 1846.1
      self.Rd      = 287.06
      self.Rv      = 461.52
+     self.Rcw     = 4218.
+     self.Rcs     = 2106.
+     self.Rlvtt   = 2.5008E+6
+     self.Rlstt   = 2.8345E+6
+     self.Rlvzer  = self.Rlvtt + self.Rtt*(self.Rcw-self.Cpv)
+     self.Rlszer  = self.Rlstt + self.Rtt*(self.Rcs-self.Cpv)
      self.P0      = 101325.
      self.sigma   = 5.670509E-8
      self.epsilon = 0.965
      self.RA      = 6378.137   
+     
+     self.full    = full
 
 #    Variables intensives 
      self.vuui_list = []
@@ -87,6 +96,10 @@ class NetCdf:
      self.SheatC_list = []
      self.FpreciplC_list = []
      self.FprecipsC_list = []
+     self.FpreciplconC_list = []
+     self.FprecipsconC_list = []
+     self.FpreciplstrC_list = []
+     self.FprecipsstrC_list = []
      self.FraySolC_list = []
      self.FrayTerC_list = []
      self.Pacc_list  = []
@@ -110,6 +123,33 @@ class NetCdf:
      self.l_tuuresi = 0
      self.l_tvvresi = 0     
 
+# Qv tendencies => cumulated flux, as red in ddh files
+
+     self.qfluxC_trans_turb_list  = []   # Turbulence transport tendency <= Ce sont des flux en fait, transformé en tendance ailleurs
+     self.qfluxC_trans_conv_list  = []   # Convective transport tendency
+     self.qfluxC_cond_conv_l_list = []   # Convective condensation liquid
+     self.qfluxC_cond_conv_i_list = []   # Convective condensation ice
+     self.qfluxC_cond_stra_l_list = []   # Stratiforme condensation liquid
+     self.qfluxC_cond_stra_i_list = []   # Stratiforme condensation ice
+     self.qfluxC_evap_stra_l_list = []   # Stratiforme evaporation liquid
+     self.qfluxC_evap_stra_i_list = []   # Stratiforme evaporation ice
+
+#  H tendencies 
+
+     self.hfluxC_solar_list         = []   # Solar H flux
+     self.hfluxC_therm_list         = []   # Thermal H flux
+     self.hfluxC_turb_list          = []   # Turbulent H flux
+     self.hfluxC_conv_list          = []   # Convective H flux
+
+#  U and V tendencies
+
+     self.UfluxC_conv_list          = []     
+     self.VfluxC_conv_list          = []     
+     self.UfluxC_turb_list          = []     
+     self.VfluxC_turb_list          = []     
+     self.UfluxC_gwd_list           = []     
+     self.VfluxC_gwd_list           = []     
+     
 #-----------------------------------------------------------------------------------#        
    def __add__(self,add_object):
 
@@ -573,6 +613,53 @@ class NetCdf:
      LFA4py.wlfafer(q_unit)   
 
 #-----------------------------------------------------------------------------------#        
+   def flux_2_tend(self,flux):
+   
+ #     tend_list = []
+      tend = np.zeros((self.time_slot,self.nlev))
+      npflux = np.array(flux)
+      npdeltap = np.array(self.DeltaP_sur_g_list)
+   
+      time = 0
+      while time<self.time_slot :
+         ilev = 0
+         while ilev<self.nlev :
+            dpog = 0.5*(npdeltap[time][ilev] + npdeltap[time+1][ilev])
+            tend[time][ilev] = (npflux[time][ilev] - npflux[time][ilev+1])/dpog
+            ilev+=1
+         time+=1   
+      return tend  
+#-----------------------------------------------------------------------------------#        
+   def var_2_tend(self,var):
+   
+      tend  = np.zeros((self.time_slot,self.nlev))
+      npvar = np.array(var)
+   
+      time = 0
+      while time<self.time_slot :
+         ilev = 0
+         while ilev<self.nlev :
+            tend[time][ilev] = (npvar[time+1][ilev] - npvar[time][ilev])*24.
+            ilev+=1
+         time+=1   
+      return tend  
+#-----------------------------------------------------------------------------------#        
+   def var_2_varf(self,var):
+   
+      varf  = np.zeros((self.time_slot,self.nlev+1))
+      npvar = np.array(var)
+   
+      time = 0
+      while time<self.time_slot :
+         varf[time][0] = 0.5*(var[time][0] + var[time+1][0])
+         varf[time][self.nlev] = 0.5*(var[time][self.nlev-1] + var[time+1][self.nlev-1])
+         ilev = 1
+         while ilev<self.nlev :
+            varf[time][ilev] = 0.25*(var[time][ilev] + var[time+1][ilev] + var[time][ilev-1] + var[time+1][ilev-1])
+            ilev+=1
+         time+=1   
+      return varf
+#-----------------------------------------------------------------------------------#        
    def read_lfa_file(self,ddh_list):
 
         self.maxdps = 0.
@@ -609,6 +696,10 @@ class NetCdf:
     #     if self.nsurf == 1:
           self.Fprecipl_list = []  ; self.Fprecipl_list.append(self.FpreciplC_list[0]*24.)
           self.Fprecips_list = []  ; self.Fprecips_list.append(self.FprecipsC_list[0]*24.)
+          self.Fpreciplcon_list = []  ; self.Fpreciplcon_list.append(self.FpreciplconC_list[0]*24.)
+          self.Fprecipscon_list = []  ; self.Fprecipscon_list.append(self.FprecipsconC_list[0]*24.)
+          self.Fpreciplstr_list = []  ; self.Fpreciplstr_list.append(self.FpreciplstrC_list[0]*24.)
+          self.Fprecipsstr_list = []  ; self.Fprecipsstr_list.append(self.FprecipsstrC_list[0]*24.)
           self.Ustress_list = [] ; self.Ustress_list.append(self.Ustressacc_list[0]/3600.)
           self.Vstress_list = [] ; self.Vstress_list.append(self.Vstressacc_list[0]/3600.)
 
@@ -617,6 +708,33 @@ class NetCdf:
     
           self.Pl_list = []  ; self.Pl_list.append(self.Pacc_list[0]*24.)
           self.Psnow_list = []  ; self.Psnow_list.append(self.Psnowacc_list[0]*24.)
+
+# Qv tendencies => cumulated flux, as red in ddh files
+          self.qflux_trans_turb_list = [] ; self.qflux_trans_turb_list.append(self.qfluxC_trans_turb_list[0]*24.)
+          self.qflux_trans_conv_list = [] ; self.qflux_trans_conv_list.append(self.qfluxC_trans_conv_list[0]*24.)
+          self.qflux_cond_conv_l_list = [] ; self.qflux_cond_conv_l_list.append(self.qfluxC_cond_conv_l_list[0]*24.)
+          self.qflux_cond_conv_i_list = [] ; self.qflux_cond_conv_i_list.append(self.qfluxC_cond_conv_i_list[0]*24.)
+          self.qflux_cond_stra_l_list = [] ; self.qflux_cond_stra_l_list.append(self.qfluxC_cond_stra_l_list[0]*24.)
+          self.qflux_cond_stra_i_list = [] ; self.qflux_cond_stra_i_list.append(self.qfluxC_cond_stra_i_list[0]*24.)
+          self.qflux_evap_stra_l_list = [] ; self.qflux_evap_stra_l_list.append(self.qfluxC_evap_stra_l_list[0]*24.)
+          self.qflux_evap_stra_i_list = [] ; self.qflux_evap_stra_i_list.append(self.qfluxC_evap_stra_i_list[0]*24.)
+          
+# H tendencies     
+
+          self.hflux_solar_list = [] ; self.hflux_solar_list.append(self.hfluxC_solar_list[0]*24.)
+          self.hflux_therm_list = [] ; self.hflux_therm_list.append(self.hfluxC_therm_list[0]*24.)
+          self.hflux_turb_list = [] ; self.hflux_turb_list.append(self.hfluxC_turb_list[0]*24.)
+          self.hflux_conv_list = [] ; self.hflux_conv_list.append(self.hfluxC_conv_list[0]*24.)
+     
+#  U and V tendencies
+
+          self.Uflux_conv_list = [] ; self.Uflux_conv_list.append(self.UfluxC_conv_list[0]*24.)
+          self.Vflux_conv_list = [] ; self.Vflux_conv_list.append(self.VfluxC_conv_list[0]*24.)
+          self.Uflux_turb_list = [] ; self.Uflux_turb_list.append(self.UfluxC_turb_list[0]*24.)
+          self.Vflux_turb_list = [] ; self.Vflux_turb_list.append(self.VfluxC_turb_list[0]*24.)
+          self.Uflux_gwd_list = []  ; self.Uflux_gwd_list.append(self.UfluxC_gwd_list[0]*24.)
+          self.Vflux_gwd_list = []  ; self.Vflux_gwd_list.append(self.VfluxC_gwd_list[0]*24.)
+          
           if self.l_tctresi: 
              self.tctresi_list = []
              self.tctresi_list.append(self.tctresiC_list[0]/3600.)
@@ -642,12 +760,41 @@ class NetCdf:
       #      if self.nsurf == 1:
              self.Fprecipl_list.append((self.FpreciplC_list[time]-self.FpreciplC_list[time-1])*24.) 
              self.Fprecips_list.append((self.FprecipsC_list[time]-self.FprecipsC_list[time-1])*24.) 
+             self.Fpreciplcon_list.append((self.FpreciplconC_list[time]-self.FpreciplconC_list[time-1])*24.) 
+             self.Fprecipscon_list.append((self.FprecipsconC_list[time]-self.FprecipsconC_list[time-1])*24.) 
+             self.Fpreciplstr_list.append((self.FpreciplstrC_list[time]-self.FpreciplstrC_list[time-1])*24.) 
+             self.Fprecipsstr_list.append((self.FprecipsstrC_list[time]-self.FprecipsstrC_list[time-1])*24.) 
              self.Ustress_list.append((self.Ustressacc_list[time]-self.Ustressacc_list[time-1])/3600.)
              self.Vstress_list.append((self.Vstressacc_list[time]-self.Vstressacc_list[time-1])/3600.)
 
              self.FraySol_list.append((self.FraySolC_list[time]-self.FraySolC_list[time-1])/3600.)
              self.FrayTer_list.append((self.FrayTerC_list[time]-self.FrayTerC_list[time-1])/3600.)
 
+# Qv tendencies => decumulation of cumulated flux
+             self.qflux_trans_turb_list.append((self.qfluxC_trans_turb_list[time]-self.qfluxC_trans_turb_list[time-1])*24.)
+             self.qflux_trans_conv_list.append((self.qfluxC_trans_conv_list[time]-self.qfluxC_trans_conv_list[time-1])*24.)
+             self.qflux_cond_conv_l_list.append((self.qfluxC_cond_conv_l_list[time]-self.qfluxC_cond_conv_l_list[time-1])*24.)
+             self.qflux_cond_conv_i_list.append((self.qfluxC_cond_conv_i_list[time]-self.qfluxC_cond_conv_i_list[time-1])*24.)
+             self.qflux_cond_stra_l_list.append((self.qfluxC_cond_stra_l_list[time]-self.qfluxC_cond_stra_l_list[time-1])*24.)
+             self.qflux_cond_stra_i_list.append((self.qfluxC_cond_stra_i_list[time]-self.qfluxC_cond_stra_i_list[time-1])*24.)
+             self.qflux_evap_stra_l_list.append((self.qfluxC_evap_stra_l_list[time]-self.qfluxC_evap_stra_l_list[time-1])*24.)
+             self.qflux_evap_stra_i_list.append((self.qfluxC_evap_stra_i_list[time]-self.qfluxC_evap_stra_i_list[time-1])*24.)
+
+# H tendencies
+             self.hflux_solar_list.append((self.hfluxC_solar_list[time]-self.hfluxC_solar_list[time-1])*24.)
+             self.hflux_therm_list.append((self.hfluxC_therm_list[time]-self.hfluxC_therm_list[time-1])*24.)
+             self.hflux_turb_list.append((self.hfluxC_turb_list[time]-self.hfluxC_turb_list[time-1])*24.)
+             self.hflux_conv_list.append((self.hfluxC_conv_list[time]-self.hfluxC_conv_list[time-1])*24.)
+
+# U and V tendencies  
+             self.Uflux_conv_list.append((self.UfluxC_conv_list[time]-self.UfluxC_conv_list[time-1])*24.)
+             self.Vflux_conv_list.append((self.VfluxC_conv_list[time]-self.VfluxC_conv_list[time-1])*24.)
+             self.Uflux_turb_list.append((self.UfluxC_turb_list[time]-self.UfluxC_turb_list[time-1])*24.)
+             self.Vflux_turb_list.append((self.VfluxC_turb_list[time]-self.VfluxC_turb_list[time-1])*24.)
+             self.Uflux_gwd_list.append((self.UfluxC_gwd_list[time]-self.UfluxC_gwd_list[time-1])*24.)
+             self.Vflux_gwd_list.append((self.VfluxC_gwd_list[time]-self.VfluxC_gwd_list[time-1])*24.)
+          
+          
              self.Pl_list.append((self.Pacc_list[time]-self.Pacc_list[time-1])*24.) 
              self.Psnow_list.append((self.Psnowacc_list[time]-self.Psnowacc_list[time-1])*24.) 
              if self.l_tctresi: self.tctresi_list.append((self.tctresiC_list[time]-self.tctresiC_list[time-1])/3600.)
@@ -809,14 +956,45 @@ class NetCdf:
             self.SheatC_list.append(self.read_lfa_field(q_unit,'SFGFS03',1))
             self.FpreciplC_list.append(self.read_lfa_field(q_unit,'FQTPRECISTL',1)+self.read_lfa_field(q_unit,'FQTPRECICOL',1))
             self.FprecipsC_list.append(self.read_lfa_field(q_unit,'FQTPRECISTN',1)+self.read_lfa_field(q_unit,'FQTPRECICON',1))
+            self.FpreciplconC_list.append(self.read_lfa_field(q_unit,'FQTPRECICOL',1))
+            self.FprecipsconC_list.append(self.read_lfa_field(q_unit,'FQTPRECICON',1))
+            self.FpreciplstrC_list.append(self.read_lfa_field(q_unit,'FQTPRECISTL',1))
+            self.FprecipsstrC_list.append(self.read_lfa_field(q_unit,'FQTPRECISTN',1))
 #            self.Pacc_list.append(self.read_lfa_field(q_unit,'G08',1)+self.read_lfa_field(q_unit,'G10',1))
             self.Pacc_list.append(self.FpreciplC_list[time][self.nlev])
 #            self.Psnowacc_list.append(self.read_lfa_field(q_unit,'G09',1)+self.read_lfa_field(q_unit,'G11',1))
             self.Psnowacc_list.append(self.FprecipsC_list[time][self.nlev])
             self.Ustressacc_list.append(self.read_lfa_field(q_unit,'FUUTUR',1)[self.nlev])
             self.Vstressacc_list.append(self.read_lfa_field(q_unit,'FVVTUR',1)[self.nlev])
+            
+# Qv tendencies => cumulated flux, as red in ddh files
+
+            self.qfluxC_trans_turb_list.append(self.read_lfa_field(q_unit,'FQVTUR',1))
+            self.qfluxC_trans_conv_list.append(self.read_lfa_field(q_unit,'FQVTURCONV',1))
+            self.qfluxC_cond_conv_l_list.append(self.read_lfa_field(q_unit,'FQTCONDECOL',1))
+            self.qfluxC_cond_conv_i_list.append(self.read_lfa_field(q_unit,'FQTCONDECON',1))
+            self.qfluxC_cond_stra_l_list.append(self.read_lfa_field(q_unit,'FQTCONDESTL',1))
+            self.qfluxC_cond_stra_i_list.append(self.read_lfa_field(q_unit,'FQTCONDESTN',1))
+            self.qfluxC_evap_stra_l_list.append(self.read_lfa_field(q_unit,'FQVEVPL',1))
+            self.qfluxC_evap_stra_i_list.append(self.read_lfa_field(q_unit,'FQVEVPN',1))
+            
+# H tendencies
+        
+            self.hfluxC_solar_list.append(self.read_lfa_field(q_unit,'FCTRAYSOL1',1))
+            self.hfluxC_therm_list.append(self.read_lfa_field(q_unit,'FCTRAYTER1',1))
+            self.hfluxC_turb_list.append(self.read_lfa_field(q_unit,'FCTTUR',1))
+            self.hfluxC_conv_list.append(self.read_lfa_field(q_unit,'FCTTURCONV',1))
           
-          
+#  U and V tendencies
+
+            self.UfluxC_conv_list.append(self.read_lfa_field(q_unit,'FUUTURCONV',1))
+            self.VfluxC_conv_list.append(self.read_lfa_field(q_unit,'FVVTURCONV',1))
+            self.UfluxC_turb_list.append(self.read_lfa_field(q_unit,'FUUTUR',1))
+            self.VfluxC_turb_list.append(self.read_lfa_field(q_unit,'FVVTUR',1))
+            self.UfluxC_gwd_list.append(self.read_lfa_field(q_unit,'FUUONDEGREL',1))
+            self.VfluxC_gwd_list.append(self.read_lfa_field(q_unit,'FVVONDEGREL',1))
+            
+             
             if self.l_tqvresi: self.tqvresiC_list.append(self.read_lfa_field(q_unit,'TQVRESI',1) * (echeance/86400.)/1000.)
             if self.l_tuuresi: self.tuuresiC_list.append(self.read_lfa_field(q_unit,'TUURESI',1) * echeance/86400.)
             if self.l_tvvresi: self.tvvresiC_list.append(self.read_lfa_field(q_unit,'TVVRESI',1) * echeance/86400.)
@@ -846,6 +1024,8 @@ class NetCdf:
             self.Psnowacc_list.append(self.read_lfa_field(q_unit,'SFPRENEGE',1))
             self.FpreciplC_list.append(self.read_lfa_field(q_unit,'FQTPRECISTL',1))
             self.FprecipsC_list.append(self.read_lfa_field(q_unit,'FQTPRECISTN',1))
+            self.FpreciplstrC_list.append(self.read_lfa_field(q_unit,'FQTPRECISTL',1))
+            self.FprecipsstrC_list.append(self.read_lfa_field(q_unit,'FQTPRECISTN',1))
             self.Ustressacc_list.append(self.read_lfa_field(q_unit,'SFUUTUR',1))
             self.Vstressacc_list.append(self.read_lfa_field(q_unit,'SFVVTUR',1))
         else:
@@ -991,6 +1171,98 @@ class NetCdf:
       omega        = myncdf.createVariable('omega',np.float32, ('time','nlev',))
       omega.units  = 'Pa/s'  ; omega.longname = 'Vertical Pressure Velocity'
       
+# Qv tendencies 
+             
+      qtend_trans_turb = myncdf.createVariable('qtend_trans_turb',np.float32, ('time_f','nlev',))
+      qtend_trans_turb.units     = 'kg/kg/day'     ; qtend_trans_turb.longname = 'Turbulent transport of Qv'
+      qtend_trans_conv = myncdf.createVariable('qtend_trans_conv',np.float32, ('time_f','nlev',))
+      qtend_trans_conv.units     = 'kg/kg/day'     ; qtend_trans_conv.longname = 'Convective transport of Qv'
+      qtend_cond_conv_l = myncdf.createVariable('qtend_cond_conv_l',np.float32, ('time_f','nlev',))
+      qtend_cond_conv_l.units     = 'kg/kg/day'     ; qtend_cond_conv_l.longname = 'Convective condensation liquid'
+      qtend_cond_conv_i = myncdf.createVariable('qtend_cond_conv_i',np.float32, ('time_f','nlev',))
+      qtend_cond_conv_i.units     = 'kg/kg/day'     ; qtend_cond_conv_i.longname = 'Convective condensation solid'
+      qtend_cond_conv_t = myncdf.createVariable('qtend_cond_conv_t',np.float32, ('time_f','nlev',))
+      qtend_cond_conv_t.units     = 'kg/kg/day'     ; qtend_cond_conv_t.longname = 'Total convective condensation'
+      qtend_cond_stra_l = myncdf.createVariable('qtend_cond_stra_l',np.float32, ('time_f','nlev',))
+      qtend_cond_stra_l.units     = 'kg/kg/day'     ; qtend_cond_stra_l.longname = 'Stratiforme condensation liquid'
+      qtend_cond_stra_i = myncdf.createVariable('qtend_cond_stra_i',np.float32, ('time_f','nlev',))
+      qtend_cond_stra_i.units     = 'kg/kg/day'     ; qtend_cond_stra_i.longname = 'Stratiforme condensation solid'
+      qtend_cond_stra_t = myncdf.createVariable('qtend_cond_stra_t',np.float32, ('time_f','nlev',))
+      qtend_cond_stra_t.units     = 'kg/kg/day'     ; qtend_cond_stra_t.longname = 'Stratiforme total condensation'
+      qtend_evap_stra_l = myncdf.createVariable('qtend_evap_stra_l',np.float32, ('time_f','nlev',))
+      qtend_evap_stra_l.units     = 'kg/kg/day'     ; qtend_evap_stra_l.longname = 'Stratiforme evaporation liquid'
+      qtend_evap_stra_i = myncdf.createVariable('qtend_evap_stra_i',np.float32, ('time_f','nlev',))
+      qtend_evap_stra_i.units     = 'kg/kg/day'     ; qtend_evap_stra_i.longname = 'Stratiforme evaporation solid'
+      qtend_evap_stra_t = myncdf.createVariable('qtend_evap_stra_t',np.float32, ('time_f','nlev',))
+      qtend_evap_stra_t.units     = 'kg/kg/day'     ; qtend_evap_stra_t.longname = 'Stratiforme total evaporation'
+      qtend_phy_total = myncdf.createVariable('qtend_phy_total',np.float32, ('time_f','nlev',))
+      qtend_phy_total.units     = 'kg/kg/day'     ; qtend_phy_total.longname = 'Qv total physical tendencies'
+      qtend_total = myncdf.createVariable('qtend_total',np.float32, ('time_f','nlev',))
+      qtend_total.units     = 'kg/kg/day'     ; qtend_total.longname = 'Qv total tendencies'
+      qtend_dyn = myncdf.createVariable('qtend_dyn',np.float32, ('time_f','nlev',))
+      qtend_dyn.units     = 'kg/kg/day'     ; qtend_dyn.longname = 'Qv dynamical tendencies'
+
+# H tendencies
+
+      htend_solar = myncdf.createVariable('htend_solar',np.float32, ('time_f','nlev',))
+      htend_solar.units     = 'J/kg/day'     ; htend_solar.longname = 'Enthalpy solar tendencies'
+      htend_therm = myncdf.createVariable('htend_therm',np.float32, ('time_f','nlev',))
+      htend_therm.units     = 'J/kg/day'     ; htend_therm.longname = 'Enthalpy thermal tendencies'
+      htend_turb = myncdf.createVariable('htend_turb',np.float32, ('time_f','nlev',))
+      htend_turb.units     = 'J/kg/day'     ; htend_turb.longname = 'Enthalpy turbulent tendencies'
+      htend_conv = myncdf.createVariable('htend_conv',np.float32, ('time_f','nlev',))
+      htend_conv.units     = 'J/kg/day'     ; htend_conv.longname = 'Enthalpy convective tendencies'
+      htend_cond_l = myncdf.createVariable('htend_cond_l',np.float32, ('time_f','nlev',))
+      htend_cond_l.units     = 'J/kg/day'     ; htend_cond_l.longname = 'Liquid-vapor phase change Enthalpy tendencies'
+      htend_cond_i = myncdf.createVariable('htend_cond_i',np.float32, ('time_f','nlev',))
+      htend_cond_i.units     = 'J/kg/day'     ; htend_cond_i.longname = 'Ice-vapor phase change Enthalpy tendencies'
+      htend_rain = myncdf.createVariable('htend_rain',np.float32, ('time_f','nlev',))
+      htend_rain.units     = 'J/kg/day'     ; htend_rain.longname = 'Enthalpy tendencies due to falling of rain'
+      htend_snow = myncdf.createVariable('htend_snow',np.float32, ('time_f','nlev',))
+      htend_snow.units     = 'J/kg/day'     ; htend_snow.longname = 'Enthalpy tendencies due to falling of snow'
+      htend_total = myncdf.createVariable('htend_total',np.float32, ('time_f','nlev',))
+      htend_total.units     = 'J/kg/day'     ; htend_total.longname = 'Total Enthalpy tendencies'
+      htend_phy_total = myncdf.createVariable('htend_phy_total',np.float32, ('time_f','nlev',))
+      htend_phy_total.units     = 'J/kg/day'     ; htend_phy_total.longname = 'Enthalpy total physical tendencies'
+      htend_dyn = myncdf.createVariable('htend_dyn',np.float32, ('time_f','nlev',))
+      htend_dyn.units     = 'J/kg/day'     ; htend_dyn.longname = 'Enthalpy dynamical tendencies'
+      htend_dyn_ray = myncdf.createVariable('htend_dyn_ray',np.float32, ('time_f','nlev',))
+      htend_dyn_ray.units     = 'J/kg/day'     ; htend_dyn_ray.longname = 'Enthalpy dynamical and radiative tendencies'
+
+# T tendencies
+
+      ttend_dyn = myncdf.createVariable('ttend_dyn',np.float32, ('time_f','nlev',))
+      ttend_dyn.units     = 'K/day'     ; ttend_dyn.longname = 'Temperature dynamical tendencies'
+      ttend_dyn_ray = myncdf.createVariable('ttend_dyn_ray',np.float32, ('time_f','nlev',))
+      ttend_dyn_ray.units     = 'K/day'     ; ttend_dyn_ray.longname = 'Temperature dynamical and radiative tendencies'
+
+# U and V tendencies  
+
+      utend_conv = myncdf.createVariable('utend_conv',np.float32, ('time_f','nlev',))
+      utend_conv.units     = 'm/s/day'     ; utend_conv.longname = 'Zonal wind convective tendencies'
+      vtend_conv = myncdf.createVariable('vtend_conv',np.float32, ('time_f','nlev',))
+      vtend_conv.units     = 'm/s/day'     ; vtend_conv.longname = 'Meridional wind convective tendencies'
+      utend_turb = myncdf.createVariable('utend_turb',np.float32, ('time_f','nlev',))
+      utend_turb.units     = 'm/s/day'     ; utend_turb.longname = 'Zonal wind turbulent tendencies'
+      vtend_turb = myncdf.createVariable('vtend_turb',np.float32, ('time_f','nlev',))
+      vtend_turb.units     = 'm/s/day'     ; vtend_turb.longname = 'Meridional wind turbulent tendencies'
+      utend_gwd = myncdf.createVariable('utend_gwd',np.float32, ('time_f','nlev',))
+      utend_gwd.units     = 'm/s/day'     ; utend_gwd.longname = 'Zonal wind GWD tendencies'
+      vtend_gwd = myncdf.createVariable('vtend_gwd',np.float32, ('time_f','nlev',))
+      vtend_gwd.units     = 'm/s/day'     ; vtend_gwd.longname = 'Meridional wind GWD tendencies'
+      utend_phy_total = myncdf.createVariable('utend_phy_total',np.float32, ('time_f','nlev',))
+      utend_phy_total.units     = 'm/s/day'     ; utend_phy_total.longname = 'Zonal wind total physical tendencies'
+      vtend_phy_total = myncdf.createVariable('vtend_phy_total',np.float32, ('time_f','nlev',))
+      vtend_phy_total.units     = 'm/s/day'     ; vtend_phy_total.longname = 'Merifional wind total physical tendencies'
+      utend_total = myncdf.createVariable('utend_total',np.float32, ('time_f','nlev',))
+      utend_total.units     = 'm/s/day'     ; utend_total.longname = 'Zonal wind total tendencies'
+      vtend_total = myncdf.createVariable('vtend_total',np.float32, ('time_f','nlev',))
+      vtend_total.units     = 'm/s/day'     ; vtend_total.longname = 'Merifional wind total tendencies'
+      utend_dyn = myncdf.createVariable('utend_dyn',np.float32, ('time_f','nlev',))
+      utend_dyn.units     = 'm/s/day'     ; utend_dyn.longname = 'Zonal wind dynamical tendencies'
+      vtend_dyn = myncdf.createVariable('vtend_dyn',np.float32, ('time_f','nlev',))
+      vtend_dyn.units     = 'm/s/day'     ; vtend_dyn.longname = 'Merifional wind dynamical tendencies'
+
       if self.nsurf != 0:
         P            = myncdf.createVariable('P',np.float32, ('time_f'))
         P.units      = 'mm/day'  ; P.longname = 'Surface Precipitation Rate'
@@ -1016,6 +1288,17 @@ class NetCdf:
         Pflux.units  = 'mm/day'  ; Pflux.longname = 'Total Precipitation Flux'
         Pfluxs       = myncdf.createVariable('Pfluxs',np.float32, ('time_f','nlevp1',))
         Pfluxs.units = 'mm/day'  ; Pfluxs.longname = 'Total Snow Flux'
+
+        Pfluxcon     = myncdf.createVariable('Pfluxcon',np.float32, ('time_f','nlevp1',))
+        Pfluxcon.units  = 'mm/day'  ; Pfluxcon.longname = 'Convective Precipitation Flux'
+        Pfluxscon       = myncdf.createVariable('Pfluxscon',np.float32, ('time_f','nlevp1',))
+        Pfluxscon.units = 'mm/day'  ; Pfluxscon.longname = 'Convective Snow Flux'
+
+        Pfluxstr     = myncdf.createVariable('Pfluxstr',np.float32, ('time_f','nlevp1',))
+        Pfluxstr.units  = 'mm/day'  ; Pfluxstr.longname = 'Stratiform Precipitation Flux'
+        Pfluxsstr       = myncdf.createVariable('Pfluxsstr',np.float32, ('time_f','nlevp1',))
+        Pfluxsstr.units = 'mm/day'  ; Pfluxsstr.longname = 'Stratiform Snow Flux'
+
         ustress      = myncdf.createVariable('ustress',np.float32, ('time_f'))
         ustress.units = 'm2/s2'   ; ustress.longname = 'Surface U stress'
         vstress      = myncdf.createVariable('vstress',np.float32, ('time_f'))
@@ -1176,6 +1459,73 @@ class NetCdf:
         vstress[:] = self.Vstress_list[:]
         Pflux[:,:]  = self.Fprecipl_list[:][:]
         Pfluxs[:,:] = self.Fprecips_list[:][:]
+        Pfluxcon[:,:]  = self.Fpreciplcon_list[:][:]
+        Pfluxscon[:,:] = self.Fprecipscon_list[:][:]
+        Pfluxstr[:,:]  = self.Fpreciplstr_list[:][:]
+        Pfluxsstr[:,:] = self.Fprecipsstr_list[:][:]
+
+#  Qv tendencies ...        
+
+        qtend_trans_turb[:,:]  = self.flux_2_tend(self.qflux_trans_turb_list)
+        qtend_trans_conv[:,:]  = self.flux_2_tend(self.qflux_trans_conv_list)
+        qtend_cond_conv_l[:,:] = self.flux_2_tend(self.qflux_cond_conv_l_list)
+        qtend_cond_conv_i[:,:] = self.flux_2_tend(self.qflux_cond_conv_i_list)
+        qtend_cond_conv_t[:,:] = qtend_cond_conv_l[:,:] + qtend_cond_conv_i[:,:]
+        qtend_cond_stra_l[:,:] = self.flux_2_tend(self.qflux_cond_stra_l_list)
+        qtend_cond_stra_i[:,:] = self.flux_2_tend(self.qflux_cond_stra_i_list)
+        qtend_cond_stra_t[:,:] = qtend_cond_stra_l[:,:] + qtend_cond_stra_i[:,:]
+        qtend_evap_stra_l[:,:] = self.flux_2_tend(self.qflux_evap_stra_l_list)
+        qtend_evap_stra_i[:,:] = self.flux_2_tend(self.qflux_evap_stra_i_list)
+        qtend_evap_stra_t[:,:] = qtend_evap_stra_l[:,:] + qtend_evap_stra_i[:,:]
+        qtend_phy_total[:,:]   = qtend_trans_turb[:,:] + qtend_trans_conv[:,:] + qtend_cond_stra_t[:,:] + qtend_cond_conv_t[:,:] \
+        - qtend_evap_stra_t[:,:]
+        qtend_total[:,:]       = self.var_2_tend(Q)
+        qtend_dyn[:,:]         = qtend_total[:,:] - qtend_phy_total[:,:]
+
+# H tendencies
+
+        Cp       = self.Cpd + (self.Cpv-self.Cpd)*np.array(self.vqv_list[:][:])
+
+        htend_solar[:,:]  = self.flux_2_tend(self.hflux_solar_list)
+        htend_therm[:,:]  = self.flux_2_tend(self.hflux_therm_list)
+        htend_turb[:,:]   = self.flux_2_tend(self.hflux_turb_list)
+        htend_conv[:,:]   = self.flux_2_tend(self.hflux_conv_list)
+        htend_cond_l[:,:] = self.Rlvzer*(qtend_cond_conv_l[:,:] + qtend_cond_stra_l[:,:] - qtend_evap_stra_l[:,:])
+        htend_cond_i[:,:] = self.Rlszer*(qtend_cond_conv_i[:,:] + qtend_cond_stra_i[:,:] - qtend_evap_stra_i[:,:])
+        
+        htend_rain[:,:]   = self.flux_2_tend((self.Rcw-self.Cpd)*Pflux[:,:]*self.var_2_varf(self.vct_list[:][:]))
+        htend_snow[:,:]   = self.flux_2_tend((self.Rcs-self.Cpd)*Pfluxs[:,:]*self.var_2_varf(self.vct_list[:][:]))
+        
+        htend_total[:,:]       = self.var_2_tend(T)*Cp[0:self.time_slot][:]
+        htend_phy_total[:,:]   = htend_solar[:,:] + htend_therm[:,:] + htend_turb[:,:] + htend_conv[:,:] - htend_cond_l[:,:] \
+        - htend_cond_i[:,:] + htend_rain[:,:] + htend_snow[:,:]
+        htend_dyn[:,:]         = htend_total[:,:] - htend_phy_total[:,:]
+        htend_dyn_ray[:,:]     = htend_dyn[:,:] + htend_solar[:,:] + htend_therm[:,:]
+
+
+# T tendencies
+
+        ttend_dyn[:,:]     = htend_dyn[:,:] / Cp[0:self.time_slot][:]
+    #    ttend_dyn[:,:]     = htend_total[:,:] / Cp[0:self.time_slot][:]
+    #    ttend_dyn[:,:]     = self.var_2_tend(T)
+        ttend_dyn_ray[:,:] = htend_dyn_ray[:,:] / Cp[0:self.time_slot][:]
+        
+# U and V tendencies
+
+        utend_conv[:,:]  = self.flux_2_tend(self.Uflux_conv_list)
+        vtend_conv[:,:]  = self.flux_2_tend(self.Vflux_conv_list)
+        utend_turb[:,:]  = self.flux_2_tend(self.Uflux_turb_list)
+        vtend_turb[:,:]  = self.flux_2_tend(self.Vflux_turb_list)
+        utend_gwd[:,:]   = self.flux_2_tend(self.Uflux_gwd_list)
+        vtend_gwd[:,:]   = self.flux_2_tend(self.Vflux_gwd_list)
+        
+        utend_phy_total[:,:] = utend_conv[:,:] + utend_turb[:,:] + utend_gwd[:,:]
+        vtend_phy_total[:,:] = vtend_conv[:,:] + vtend_turb[:,:] + vtend_gwd[:,:]
+        utend_total[:,:]     = self.var_2_tend(U)
+        vtend_total[:,:]     = self.var_2_tend(V)
+        utend_dyn[:,:]       = utend_total[:,:] - utend_phy_total[:,:]
+        vtend_dyn[:,:]       = vtend_total[:,:] - vtend_phy_total[:,:]
+
 # calcul de u*      
         npustress = np.array(self.Ustress_list[:])
         npvstress = np.array(self.Vstress_list[:])

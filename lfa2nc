@@ -29,7 +29,8 @@ Version_story = Version_story +' 2.00 (18-01-2024) :  Yves Bouteloup : Mise sous
 
 import sys
 import argparse
-from lfanetcdf_class_P3_22 import NetCdf
+#from lfanetcdf_class_P3_22 import NetCdf
+from lfanetcdf_class import NetCdf
 
 def main(argv):     
 
